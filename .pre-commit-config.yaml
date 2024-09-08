@@ -1,0 +1,37 @@
+default_language_version:
+  python: python3.12
+repos:
+- repo: local
+  hooks:
+  - id: ruff
+    name: ruff
+    description: "Run 'ruff' for extremely fast Python linting"
+    entry: poetry run ruff check --force-exclude
+    language: system
+    types_or: [ python, pyi ]
+    args: [ --fix, --exit-non-zero-on-fix ]
+    require_serial: true
+
+  - id: ruff-format
+    name: ruff-format
+    description: "Run 'ruff format' for extremely fast Python formatting"
+    entry: poetry run ruff format --force-exclude
+    language: system
+    types_or: [ python, pyi ]
+    args: [ --quiet ]
+
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.6.0
+  hooks:
+  - id: end-of-file-fixer
+  - id: trailing-whitespace
+
+- repo: local
+  hooks:
+  - id: mypy
+    name: mypy
+    entry: poetry run mypy --non-interactive --install-types
+    language: system
+    files: ^.*.(py|pyi)$
+    pass_filenames: true
+    require_serial: true
