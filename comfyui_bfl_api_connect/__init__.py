@@ -2,6 +2,10 @@ import argparse
 
 from enum import Enum
 from pydantic import BaseModel, Field, NonNegativeInt
+import webbrowser
+import httpx
+import time
+import random
 
 
 class ImageVariant(str, Enum):
@@ -50,30 +54,69 @@ class ImageRequest(BaseModel):
     interval: int | None = Field(None, ge=1, le=4)
 
 
-class ImageResponse(BaseModel):
-    result: AsyncResponse | HTTPValidationError
-
-
 class ValidationError(BaseModel):
     loc: list[str]
     msg: str
     type: str
 
 
-class APIKeyHeader(BaseModel):
-    x_key: str
+def pretty_dict_str(d: dict) -> str:
+    import json
 
-
-class GetResultRequest(BaseModel):
-    id: str
-
-
-class GetResultResponse(BaseModel):
-    result: ResultResponse | HTTPValidationError
+    return json.dumps(d, sort_keys=True, indent=4)
 
 
 def run_flux(api_key: str, image_request_body: ImageRequest) -> None:
-    print(image_request_body)
+    print(
+        f"Posting job to https://api.bfl.ml/v1/image :\n{pretty_dict_str(image_request_body.model_dump())}\n"
+    )
+    res = httpx.post(
+        "https://api.bfl.ml/v1/image",
+        headers={"x-key": api_key},
+        json=image_request_body.model_dump(),
+    )
+    res.raise_for_status()
+    async_response = AsyncResponse(**res.json())
+    job_id = async_response.id
+
+    n = 1  # exponential backoff counter. For now not used.
+    while True:
+        # wait with exponential backoff
+        time.sleep(0.5 * (2**n) + (random.randint(0, 1000) / 1000))
+        # fetch result
+        print(f"Fetching status of job {job_id} ...")
+        res = httpx.get(
+            "https://api.bfl.ml/v1/get_result",
+            headers={"x-key": api_key},
+            params={"id": job_id},
+        )
+        res.raise_for_status()
+        result_response = ResultResponse(**res.json())
+        match result_response.status:
+            case StatusResponse.Ready:
+                print(f"Result ready:\n{result_response.result}")
+                assert result_response.result is not None
+                sample_url = result_response.result.get("sample")
+                assert sample_url is not None
+                webbrowser.open(sample_url, new=0, autoraise=True)
+                return
+            case StatusResponse.Error:
+                print(f"Error: {result_response.result}")
+                return
+            case StatusResponse.Pending:
+                print("Job still pending ...")
+                pass
+            case StatusResponse.RequestModerated:
+                print("Request moderated ...")
+                return
+            case StatusResponse.ContentModerated:
+                print("Content moderated ...")
+                return
+            case StatusResponse.TaskNotFound:
+                print("Task not found ...")
+                return
+            case _:
+                raise ValueError(f"Unknown status: {result_response.status}")
 
 
 def main() -> None:
