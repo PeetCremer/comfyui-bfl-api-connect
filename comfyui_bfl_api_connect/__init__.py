@@ -9,8 +9,9 @@ import random
 
 
 class ImageVariant(str, Enum):
-    dev = "flux.1-dev"
-    pro = "flux.1-pro"
+    dev = "flux-dev"
+    pro = "flux-pro"
+    proplus = "flux-pro-1.1"
 
 
 class AsyncResponse(BaseModel):
@@ -45,7 +46,6 @@ class ImageRequest(BaseModel):
     prompt: str = "ein fantastisches bild"
     width: int = Field(1024, ge=256, le=1440, multiple_of=32)
     height: int = Field(1024, ge=256, le=1440, multiple_of=32)
-    variant: ImageVariant = ImageVariant.pro
     steps: int | None = None
     prompt_upsampling: bool = False
     seed: NonNegativeInt | None = None
@@ -66,12 +66,17 @@ def pretty_dict_str(d: dict) -> str:
     return json.dumps(d, sort_keys=True, indent=4)
 
 
-def run_flux(api_key: str, image_request_body: ImageRequest) -> None:
+def run_flux(
+    api_key: str,
+    image_request_body: ImageRequest,
+    variant: ImageVariant = ImageVariant.proplus,
+) -> None:
+    bfl_url = f"https://api.bfl.ml/v1/{str(variant.value)}"
     print(
-        f"Posting job to https://api.bfl.ml/v1/image :\n{pretty_dict_str(image_request_body.model_dump())}\n"
+        f"Posting job to {bfl_url}:\n{pretty_dict_str(image_request_body.model_dump())}\n"
     )
     res = httpx.post(
-        "https://api.bfl.ml/v1/image",
+        bfl_url,
         headers={"x-key": api_key},
         json=image_request_body.model_dump(),
     )
@@ -141,7 +146,7 @@ def main() -> None:
         "--variant",
         type=ImageVariant,
         choices=list(ImageVariant),
-        default=ImageVariant.pro,
+        default=ImageVariant.proplus,
         help="Image variant",
     )
     parser.add_argument(
@@ -166,7 +171,7 @@ def main() -> None:
     args = parser.parse_args()
     image_request_input = ImageRequest(**vars(args))
 
-    run_flux(args.api_key, image_request_input)
+    run_flux(args.api_key, image_request_input, variant=args.variant)
 
 
 if __name__ == "__main__":
